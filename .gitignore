@@ -1,3 +1,6 @@
+# Local scraper caches (regenerable, not source data)
+data_outputs/.clawhub_skills_cache.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

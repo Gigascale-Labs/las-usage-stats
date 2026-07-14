@@ -1,0 +1,75 @@
+name: Daily agent-stats scrape
+
+on:
+  schedule:
+    # 06:17 UTC daily -- off the hour to avoid the top-of-hour GH Actions crunch.
+    - cron: "17 6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      # Playwright's browser binary is a separate ~150MB download from the
+      # `playwright` pip package -- cache it so MoltBook's scraper isn't
+      # re-downloading Chromium on every single daily run.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+
+      - name: Install Playwright browser
+        run: playwright install --with-deps chromium
+
+      # ClawHub's local incremental cache (data_outputs/.clawhub_skills_cache.json)
+      # is gitignored on purpose -- it's regenerable scraper state, not source
+      # data, and committing a 50k+-skill JSON blob daily would bloat repo
+      # history fast. Persisted via Actions cache instead: only the very first
+      # run ever does the full ~7-9 minute catalog walk; every day after that
+      # is an incremental fetch of just what changed. See scrapers/clawhub_scraper.py.
+      - name: Restore ClawHub skill cache
+        uses: actions/cache@v4
+        with:
+          path: data_outputs/.clawhub_skills_cache.json
+          key: clawhub-skills-cache-${{ github.run_id }}
+          restore-keys: |
+            clawhub-skills-cache-
+
+      # Reuses the workflow's own built-in token to authenticate GitHub API
+      # calls -- this is what lets Task 6's star-history scraper actually
+      # pull daily star history in CI, which a plain local run can't do
+      # without you creating a personal GITHUB_TOKEN yourself.
+      - name: Run all scrapers + rebuild master CSV
+        id: run_all
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python run_all.py
+
+      - name: Commit updated data outputs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data_outputs/
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore: daily agent-stats scrape ($(date -u +%Y-%m-%d))"
+          git push
+
+      - name: Fail the run if any scraper errored
+        if: steps.run_all.outcome == 'failure'
+        run: |
+          echo "One or more scrapers failed -- see the 'Run all scrapers' step output above. Data that *did* succeed was still committed."
+          exit 1
