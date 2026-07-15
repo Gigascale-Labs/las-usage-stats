@@ -15,7 +15,9 @@ STEPS = [
     ("EvoMap Hub", ROOT / "scrapers" / "evomap_scraper.py"),
     ("MoltBook", ROOT / "scrapers" / "moltbook_scraper.py"),
     ("Olas", ROOT / "scrapers" / "olas_scraper.py"),
-    ("LangGraph / CrewAI", ROOT / "scrapers" / "langgraph_crewai_scraper.py"),
+    ("LangGraph / CrewAI / Agent Framework", ROOT / "scrapers" / "langgraph_crewai_scraper.py"),
+    ("n8n", ROOT / "scrapers" / "n8n_scraper.py"),
+    ("Smithery", ROOT / "scrapers" / "smithery_scraper.py"),
 ]
 
 

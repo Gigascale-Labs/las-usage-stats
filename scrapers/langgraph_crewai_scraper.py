@@ -45,6 +45,7 @@ from parsers.timeseries import append_snapshot_csv, write_csv  # noqa: E402
 PACKAGES = {
     "langgraph": "langchain-ai/langgraph",
     "crewai": "crewAIInc/crewAI",
+    "agent-framework": "microsoft/agent-framework",  # Microsoft's AutoGen successor (GA'd Q1 2026)
 }
 
 OUT_DIR = Path(__file__).resolve().parent.parent / "data_outputs"

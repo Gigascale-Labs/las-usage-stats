@@ -52,6 +52,8 @@ def build():
     pypi = read_csv("pypi_downloads_daily.csv")
     moltbook_history = read_jsonl("moltbook_stats_history.jsonl")
     github_stars = read_csv("github_stars_snapshot.csv")
+    npm_downloads = read_csv("npm_downloads_daily.csv")
+    smithery = read_csv("smithery_registry_snapshots.csv")
 
     def add(key, kind, data):
         series[key] = data
@@ -96,11 +98,19 @@ def build():
     for pkg in sorted({r["package"] for r in github_stars}):
         rows = [r for r in github_stars if r["package"] == pkg]
         add(f"github_stars_{pkg}", "cumulative", points(rows, "date", "total_stars"))
-    # Ensure both known packages have a series even if a snapshot row hasn't landed yet,
+    # Ensure every tracked package has a series even if a snapshot row hasn't landed yet,
     # so the UI can render an explicit "no data" note instead of silently omitting the chart.
-    for pkg in ("langgraph", "crewai"):
+    for pkg in ("langgraph", "crewai", "agent-framework", "n8n"):
         series.setdefault(f"github_stars_{pkg}", {})
         kinds.setdefault(f"github_stars_{pkg}", "cumulative")
+
+    # npm downloads (flow, sum per bucket) -- n8n is npm-distributed, not PyPI
+    for pkg in sorted({r["package"] for r in npm_downloads}):
+        rows = [r for r in npm_downloads if r["package"] == pkg]
+        add(f"npm_downloads_{pkg}", "flow", points(rows, "date", "downloads"))
+
+    # Smithery MCP server registry (cumulative snapshot)
+    add("smithery_total_servers", "cumulative", points(smithery, "date", "total_servers"))
 
     metadata = {
         "generated_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
@@ -156,19 +166,38 @@ def build():
             {
                 "name": "PyPI Downloads",
                 "url": "https://pypi.org",
-                "description": "Package download counts for the LangGraph and CrewAI agent orchestration frameworks, via pypistats.org.",
+                "description": "Package download counts for agent orchestration frameworks distributed via PyPI, via pypistats.org.",
                 "metrics": [
                     {"key": "pypi_downloads_langgraph", "label": "LangGraph downloads", "url": "https://pypi.org/project/langgraph/"},
                     {"key": "pypi_downloads_crewai", "label": "CrewAI downloads", "url": "https://pypi.org/project/crewai/"},
+                    {"key": "pypi_downloads_agent-framework", "label": "Microsoft Agent Framework downloads", "url": "https://pypi.org/project/agent-framework/"},
+                ],
+            },
+            {
+                "name": "npm Downloads",
+                "url": "https://www.npmjs.com",
+                "description": "Package download counts for agent tooling distributed via npm, via the npm registry's public downloads API.",
+                "metrics": [
+                    {"key": "npm_downloads_n8n", "label": "n8n downloads", "url": "https://www.npmjs.com/package/n8n"},
                 ],
             },
             {
                 "name": "GitHub Stars",
                 "url": "https://github.com",
-                "description": "Cumulative GitHub stars for the LangGraph and CrewAI repositories, as a proxy for framework adoption.",
+                "description": "Cumulative GitHub stars for tracked agent frameworks and tools, as a proxy for adoption.",
                 "metrics": [
                     {"key": "github_stars_langgraph", "label": "LangGraph Stars", "url": "https://github.com/langchain-ai/langgraph"},
                     {"key": "github_stars_crewai", "label": "CrewAI Stars", "url": "https://github.com/crewAIInc/crewAI"},
+                    {"key": "github_stars_agent-framework", "label": "Microsoft Agent Framework Stars", "url": "https://github.com/microsoft/agent-framework"},
+                    {"key": "github_stars_n8n", "label": "n8n Stars", "url": "https://github.com/n8n-io/n8n"},
+                ],
+            },
+            {
+                "name": "Smithery",
+                "url": "https://smithery.ai",
+                "description": "A registry and hosting hub for Model Context Protocol (MCP) servers -- tracks the total number of servers listed.",
+                "metrics": [
+                    {"key": "smithery_total_servers", "label": "Total MCP Servers Listed"},
                 ],
             },
         ],
