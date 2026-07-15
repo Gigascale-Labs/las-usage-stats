@@ -46,10 +46,11 @@ A few things make this practical rather than an expensive job every day:
 
 - **ClawHub's incremental cache** (`data_outputs/.clawhub_skills_cache.json`)
   is persisted between runs via `actions/cache`, not git (committing a
-  50k+-skill JSON blob daily would bloat repo history fast, and it's
+  70k+-skill JSON blob daily would bloat repo history fast, and it's
   regenerable state, not source data). Only the very first run ever does
-  the full ~7-9 minute catalog walk; every day after that is an incremental
-  fetch of just what changed -- seconds, not minutes.
+  the full catalog walk -- confirmed by actually running it: ~68k skills,
+  ~19 minutes end to end. Every day after that is an incremental fetch of
+  just what changed -- seconds, not minutes.
 - **Playwright's Chromium binary** (needed for MoltBook) is cached the same
   way, so it's not re-downloaded every run.
 - **GitHub star history** (Task 6) actually works in CI without you creating
@@ -71,7 +72,7 @@ The original task brief mixed real systems with details that turned out to be in
 
 | # | Source | Status | What changed from the brief |
 |---|---|---|---|
-| 1 | ClawHub | Real, API confirmed live | Field is `stats.installs`, not `installsAllTime`. No historical endpoint exists -- true "installs since inception" data doesn't exist anywhere to scrape. Split into two honest series: a real historical *skills-published* series (from each skill's `createdAt`), and an *installs* series that only starts accumulating from this project's first run onward. An authenticated bulk-export endpoint exists but was tested and ruled out: it returns a ZIP of one JSON file per skill, rate-limited to 60 requests/hour at ~250 skills/request -- slower than plain pagination for a catalog this size. Full-catalog scrapes take a few minutes; that's an accepted tradeoff, not a bug. |
+| 1 | ClawHub | Real, API confirmed live | Field is `stats.installs`, not `installsAllTime`. No historical endpoint exists -- true "installs since inception" data doesn't exist anywhere to scrape. Split into two honest series: a real historical *skills-published* series (from each skill's `createdAt`), and an *installs* series that only starts accumulating from this project's first run onward. An authenticated bulk-export endpoint exists but was tested and ruled out: it returns a ZIP of one JSON file per skill, rate-limited to 60 requests/hour at ~250 skills/request -- slower than plain pagination for a catalog this size. A full-catalog scrape (confirmed by running it) takes ~19 minutes for ~68k skills; that's an accepted one-time tradeoff, not a bug. |
 | 2 | EvoMap | Real, but the git-clone design was wrong | The EvoMap Hub is a hosted API service (`evomap.ai`), not a git repository -- there's nothing to `git clone`. `.evolver/gep/events.jsonl` is local runtime state that EvoMap's own tooling git-ignores, so it's never committed even in a project's own repo. Redesigned (per your direction) to poll the Hub's real public stats endpoint, `GET https://evomap.ai/a2a/stats`, directly. Same no-history caveat as ClawHub. |
 | 3 | MoltBook | Real, brief was accurate | Confirmed it's a client-rendered Next.js SPA with no exposed JSON API for the homepage stats -- Playwright is genuinely required, not just a nice-to-have. Numbers are in the right ballpark (~194-207k human-verified, ~2.85-2.9M total registered) and have actually been *falling* as Meta/Moltbook purge bot-farm accounts post-acquisition -- that's real platform behavior, not a scraper bug. |
 | 4 | Enterprise adoption research | Real research houses, one fabricated figure | NVIDIA's 48% telecom figure, Bain's Agentic AI Benchmark, and Gartner's 40%-of-apps forecast are all real and cited. The brief's "Gartner 15.2% cost savings" figure could not be found anywhere after multiple searches -- flagged as unverified in the output rather than silently included. Per your call, this was hand-compiled via web search rather than a scripted search-API integration (no Serper/Tavily/SearxNG key was available). |
