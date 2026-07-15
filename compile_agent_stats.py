@@ -62,6 +62,11 @@ FIELDS = [
     "langgraph_github_stars_cumulative",
     "crewai_pypi_downloads",
     "crewai_github_stars_cumulative",
+    "agent_framework_pypi_downloads",
+    "agent_framework_github_stars_cumulative",
+    "n8n_npm_downloads",
+    "n8n_github_stars_cumulative",
+    "smithery_total_servers",
 ]
 
 
@@ -83,6 +88,30 @@ def read_jsonl(path: Path) -> list[dict]:
             line = line.strip()
             if line:
                 out.append(json.loads(line))
+    return out
+
+
+def forward_fill_by_package(rows: list[dict], date_field: str, value_field: str) -> dict[tuple[str, str], str]:
+    """Like snapshot_series_from_first_date, but for multi-package snapshot logs
+    (e.g. github_stars_snapshot.csv): forward-fills each package independently
+    from that package's own first observed date. Returns {(package, date): value}."""
+    by_pkg: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        by_pkg[r["package"]].append(r)
+
+    out: dict[tuple[str, str], str] = {}
+    today = date.today()
+    for pkg, prows in by_pkg.items():
+        prows_sorted = sorted(prows, key=lambda r: r[date_field])
+        first = datetime.strptime(prows_sorted[0][date_field], "%Y-%m-%d").date()
+        points = [(datetime.strptime(r[date_field], "%Y-%m-%d").date(), r[value_field]) for r in prows_sorted]
+        idx = 0
+        current = None
+        for d in daterange(first, today):
+            while idx < len(points) and points[idx][0] == d:
+                current = points[idx][1]
+                idx += 1
+            out[(pkg, d.isoformat())] = current
     return out
 
 
@@ -139,15 +168,26 @@ def main() -> None:
     olas_rows = read_csv(DATA_DIR / "olas_daily_active_agents.csv")
     olas_by_date = {r["date"]: r for r in olas_rows}
 
-    # --- PyPI downloads: true daily history (bounded ~180-day window) ---
+    # --- PyPI / npm downloads: true daily history (bounded rolling windows) ---
     pypi_rows = read_csv(DATA_DIR / "pypi_downloads_daily.csv")
     pypi_by_pkg_date: dict[tuple[str, str], str] = {(r["package"], r["date"]): r["downloads"] for r in pypi_rows}
 
-    # --- GitHub stars: true daily history if GITHUB_TOKEN was set, else nothing ---
-    stars_rows = read_csv(DATA_DIR / "github_stars_daily.csv")
-    stars_by_pkg_date: dict[tuple[str, str], str] = {
-        (r["package"], r["date"]): r["cumulative_stars"] for r in stars_rows
-    }
+    npm_rows = read_csv(DATA_DIR / "npm_downloads_daily.csv")
+    npm_by_pkg_date: dict[tuple[str, str], str] = {(r["package"], r["date"]): r["downloads"] for r in npm_rows}
+
+    # --- GitHub stars: forward-filled from the always-on snapshot log (one row/run),
+    # overridden by github_stars_daily.csv's true daily history wherever GITHUB_TOKEN
+    # was set and that finer-grained data exists.
+    stars_by_pkg_date: dict[tuple[str, str], str] = forward_fill_by_package(
+        read_csv(DATA_DIR / "github_stars_snapshot.csv"), "date", "total_stars"
+    )
+    stars_by_pkg_date.update(
+        {(r["package"], r["date"]): r["cumulative_stars"] for r in read_csv(DATA_DIR / "github_stars_daily.csv")}
+    )
+
+    # --- Smithery MCP registry: single-entity snapshot, forward-filled ---
+    smithery_snaps = read_csv(DATA_DIR / "smithery_registry_snapshots.csv")
+    smithery_series = snapshot_series_from_first_date(smithery_snaps, "date", ["total_servers"])
 
     # --- Determine overall date range to emit ---
     all_dates = set()
@@ -157,7 +197,9 @@ def main() -> None:
     all_dates.update(moltbook_series.keys())
     all_dates.update(olas_by_date.keys())
     all_dates.update(d for (_, d) in pypi_by_pkg_date.keys())
+    all_dates.update(d for (_, d) in npm_by_pkg_date.keys())
     all_dates.update(d for (_, d) in stars_by_pkg_date.keys())
+    all_dates.update(smithery_series.keys())
     all_dates.discard(None)
 
     real_dates = [d for d in all_dates if len(d) == 10]  # filter out any stray month-only keys
@@ -199,6 +241,11 @@ def main() -> None:
             "langgraph_github_stars_cumulative": stars_by_pkg_date.get(("langgraph", iso)),
             "crewai_pypi_downloads": pypi_by_pkg_date.get(("crewai", iso)),
             "crewai_github_stars_cumulative": stars_by_pkg_date.get(("crewai", iso)),
+            "agent_framework_pypi_downloads": pypi_by_pkg_date.get(("agent-framework", iso)),
+            "agent_framework_github_stars_cumulative": stars_by_pkg_date.get(("agent-framework", iso)),
+            "n8n_npm_downloads": npm_by_pkg_date.get(("n8n", iso)),
+            "n8n_github_stars_cumulative": stars_by_pkg_date.get(("n8n", iso)),
+            "smithery_total_servers": smithery_series.get(iso, {}).get("total_servers"),
         }
         rows.append(row)
 
