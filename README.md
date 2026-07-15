@@ -34,6 +34,17 @@ python compile_agent_stats.py           # re-merge without re-scraping
 
 The snapshot-based sources (ClawHub installs, EvoMap hub stats, MoltBook, GitHub star snapshots) only accumulate real history if something runs them repeatedly over time -- a single local run just gives you one data point.
 
+## Dashboard
+
+A self-contained charting UI lives in `dashboard/`. After scraping new data, refresh it and open it:
+
+```
+python dashboard/generate_data.py   # rebuilds dashboard/data.js from data_outputs/*.csv
+python -m http.server -d dashboard 8000   # or just open dashboard/index.html directly
+```
+
+Then visit http://localhost:8000. It shows monthly-rollup charts per data source, a selectable date range (presets + custom from/to month), and an "Export to PDF" button that triggers the browser print dialog with a print-friendly layout. Chart.js is vendored under `dashboard/vendor/` so it works fully offline.
+
 ### Daily scrape on GitHub Actions
 
 `.github/workflows/daily_scrape.yml` runs `run_all.py` on a daily schedule

@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentic Ecosystem Stats Dashboard</title>
+<script src="vendor/chart.umd.min.js"></script>
+<script src="data.js"></script>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #151821;
+    --panel-border: #262b38;
+    --text: #e6e9ef;
+    --text-dim: #9aa3b5;
+    --accent: #6ea8fe;
+    --accent2: #f2b134;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f5f6f8;
+      --panel: #ffffff;
+      --panel-border: #e1e4ea;
+      --text: #1a1d24;
+      --text-dim: #5b6472;
+      --accent: #2f6fed;
+      --accent2: #c9820a;
+      color-scheme: light;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px 32px 64px;
+  }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .subtitle { color: var(--text-dim); font-size: 0.85rem; margin: 0 0 20px; }
+  a { color: var(--accent); }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: flex-end;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 28px;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
+  select, input[type="date"], input[type="month"] {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.9rem;
+  }
+  .presets, .granularity { display: flex; gap: 6px; }
+  button {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  button.primary {
+    background: var(--accent);
+    color: #0b0d12;
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  button.primary:hover { opacity: 0.9; color: #0b0d12; }
+  .group { margin-bottom: 36px; }
+  .group h2 {
+    font-size: 1.05rem;
+    margin: 0 0 4px;
+  }
+  .group h2 a { font-size: 0.75rem; font-weight: 400; margin-left: 8px; }
+  .group .group-desc {
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    margin: 0 0 14px;
+    border-bottom: 1px solid var(--panel-border);
+    padding-bottom: 10px;
+  }
+  .chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+    gap: 20px;
+  }
+  .chart-card {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .chart-card h3 {
+    font-size: 0.88rem;
+    margin: 0 0 4px;
+    color: var(--text);
+  }
+  .chart-card .stat-line {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin: 0 0 10px;
+  }
+  .chart-card .stat-line strong { color: var(--accent); }
+  .chart-card .projection-note { color: var(--accent2); }
+  .chart-wrap { position: relative; height: 220px; }
+  footer {
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    margin-top: 40px;
+    text-align: center;
+  }
+
+  @media print {
+    body { background: #fff; color: #111; padding: 12px; }
+    .controls { display: none; }
+    .chart-card { break-inside: avoid; border-color: #ccc; }
+    .group { break-inside: avoid-page; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Agentic Ecosystem Stats</h1>
+<p class="subtitle" id="subtitle">Loading data…</p>
+
+<div class="controls" id="controls">
+  <div class="field">
+    <label>Granularity</label>
+    <div class="granularity">
+      <button data-gran="day">Day</button>
+      <button data-gran="month">Month</button>
+      <button data-gran="year">Year</button>
+    </div>
+  </div>
+  <div class="field">
+    <label for="start-date">From</label>
+    <input type="date" id="start-date">
+  </div>
+  <div class="field">
+    <label for="end-date">To</label>
+    <input type="date" id="end-date">
+  </div>
+  <div class="field">
+    <label>Quick range</label>
+    <div class="presets">
+      <button data-range="3">3</button>
+      <button data-range="6">6</button>
+      <button data-range="12">12</button>
+      <button data-range="all">All</button>
+    </div>
+  </div>
+  <div class="field">
+    <label>&nbsp;</label>
+    <button class="primary" id="export-pdf">Export to PDF</button>
+  </div>
+</div>
+
+<div id="groups"></div>
+
+<footer id="footer"></footer>
+
+<script>
+const DATA = window.DASHBOARD_DATA;
+const KINDS = DATA.metadata.kinds || {};
+const charts = {};
+let allDates = [];
+let granularity = "month"; // day | month | year
+
+function collectAllDates() {
+  const set = new Set();
+  Object.values(DATA.series).forEach(s => Object.keys(s).forEach(d => set.add(d)));
+  return Array.from(set).sort();
+}
+
+function fmtNum(n) {
+  if (n === undefined || n === null || Number.isNaN(n)) return "–";
+  if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return Math.round(n * 100) / 100;
+}
+
+function bucketKey(dateStr, gran) {
+  if (gran === "day") return dateStr;
+  if (gran === "year") return dateStr.slice(0, 4);
+  return dateStr.slice(0, 7); // month
+}
+
+function bucketEndExclusive(bucketKeyStr, gran) {
+  // First date NOT in this bucket, as a Date object (UTC).
+  if (gran === "day") {
+    const d = new Date(bucketKeyStr + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d;
+  }
+  if (gran === "year") {
+    return new Date(`${Number(bucketKeyStr) + 1}-01-01T00:00:00Z`);
+  }
+  const [y, m] = bucketKeyStr.split("-").map(Number);
+  return m === 12 ? new Date(`${y + 1}-01-01T00:00:00Z`) : new Date(`${y}-${String(m + 1).padStart(2, "0")}-01T00:00:00Z`);
+}
+
+function daysBetween(a, b) {
+  return (b.getTime() - a.getTime()) / 86400000;
+}
+
+/** Aggregate a raw {date: value} series into ordered [bucketKey, value] pairs per `kind`. */
+function aggregate(rawSeries, kind, gran, startDate, endDate) {
+  const dates = Object.keys(rawSeries).filter(d => d >= startDate && d <= endDate).sort();
+  const buckets = new Map(); // key -> {sum, count, last}
+  dates.forEach(d => {
+    const k = bucketKey(d, gran);
+    if (!buckets.has(k)) buckets.set(k, { sum: 0, count: 0, last: null, lastDate: null });
+    const b = buckets.get(k);
+    b.sum += rawSeries[d];
+    b.count += 1;
+    if (!b.lastDate || d > b.lastDate) { b.last = rawSeries[d]; b.lastDate = d; }
+  });
+  const keys = Array.from(buckets.keys()).sort();
+  return keys.map(k => {
+    const b = buckets.get(k);
+    let v;
+    if (kind === "cumulative") v = b.last;
+    else if (kind === "average") v = b.sum / b.count;
+    else v = b.sum; // flow
+    return [k, v];
+  });
+}
+
+/** 45-day-span EWMA of the day-over-day rate of a raw {date: value} series. */
+function ewmaDailyRate(rawSeries, kind) {
+  const dates = Object.keys(rawSeries).sort();
+  if (dates.length < 3) return null;
+  const alpha = 2 / (45 + 1);
+  let ewma = null;
+  for (let i = 1; i < dates.length; i++) {
+    const d0 = new Date(dates[i - 1] + "T00:00:00Z");
+    const d1 = new Date(dates[i] + "T00:00:00Z");
+    const gap = Math.max(1, daysBetween(d0, d1));
+    let rate;
+    if (kind === "average") {
+      rate = rawSeries[dates[i]]; // gauge-like: rate *is* the value
+    } else {
+      rate = (rawSeries[dates[i]] - rawSeries[dates[i - 1]]) / gap; // per-day delta
+    }
+    ewma = ewma === null ? rate : alpha * rate + (1 - alpha) * ewma;
+  }
+  return { rate: ewma, lastDate: dates[dates.length - 1], lastValue: rawSeries[dates[dates.length - 1]] };
+}
+
+/**
+ * If the most recent bucket is incomplete (today falls inside it, before its end),
+ * project a full-bucket value using the 45-day EWMA daily rate. Returns
+ * {key, value} or null if not applicable / not enough history.
+ */
+function projectCurrentBucket(rawSeries, kind, gran, bucketPairs, startDate, endDate) {
+  if (bucketPairs.length === 0) return null;
+  const [lastKey, lastActualValue] = bucketPairs[bucketPairs.length - 1];
+  const bucketEnd = bucketEndExclusive(lastKey, gran);
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  if (today >= bucketEnd.toISOString().slice(0, 10)) return null; // bucket already fully elapsed
+  if (today > endDate) return null; // user's range ends before "now"
+
+  const est = ewmaDailyRate(rawSeries, kind);
+  if (!est) return null;
+
+  const bucketEndDate = bucketEnd;
+  const lastDataDate = new Date(est.lastDate + "T00:00:00Z");
+  const remainingDays = Math.max(0, daysBetween(lastDataDate, bucketEndDate) - 1);
+  if (remainingDays <= 0) return null;
+
+  let projected;
+  if (kind === "cumulative") {
+    projected = est.lastValue + est.rate * remainingDays;
+  } else if (kind === "average") {
+    // Blend actual observations so far with the projected rate for the rest of the bucket.
+    const dates = Object.keys(rawSeries).filter(d => bucketKey(d, gran) === lastKey);
+    const observedDays = dates.length;
+    projected = (lastActualValue * observedDays + est.rate * remainingDays) / (observedDays + remainingDays);
+  } else {
+    projected = lastActualValue + est.rate * remainingDays;
+  }
+  return { key: lastKey, value: projected };
+}
+
+function buildGroups() {
+  const container = document.getElementById("groups");
+  container.innerHTML = "";
+  DATA.metadata.groups.forEach(group => {
+    const groupEl = document.createElement("div");
+    groupEl.className = "group";
+    const heading = document.createElement("h2");
+    heading.innerHTML = `${group.name}${group.url ? ` <a href="${group.url}" target="_blank" rel="noopener">${group.url.replace(/^https?:\/\//, "")}</a>` : ""}`;
+    groupEl.appendChild(heading);
+
+    if (group.description) {
+      const desc = document.createElement("p");
+      desc.className = "group-desc";
+      desc.textContent = group.description;
+      groupEl.appendChild(desc);
+    }
+
+    const grid = document.createElement("div");
+    grid.className = "chart-grid";
+
+    group.metrics.forEach(metric => {
+      const card = document.createElement("div");
+      card.className = "chart-card";
+      const titleHtml = metric.url
+        ? `<a href="${metric.url}" target="_blank" rel="noopener">${metric.label}</a>`
+        : metric.label;
+      card.innerHTML = `
+        <h3>${titleHtml}</h3>
+        <p class="stat-line" id="stat-${metric.key}"></p>
+        <div class="chart-wrap"><canvas id="chart-${metric.key}"></canvas></div>
+      `;
+      grid.appendChild(card);
+    });
+
+    if (group.stacked_volume) {
+      const sv = group.stacked_volume;
+      const key = `__stacked_${group.name}`;
+      const card = document.createElement("div");
+      card.className = "chart-card";
+      card.innerHTML = `
+        <h3>${sv.title}</h3>
+        <p class="stat-line" id="stat-${key}"></p>
+        <div class="chart-wrap"><canvas id="chart-${key}"></canvas></div>
+      `;
+      grid.appendChild(card);
+      group.__stackedKey = key;
+    }
+
+    groupEl.appendChild(grid);
+    container.appendChild(groupEl);
+  });
+}
+
+function renderChart(key, label) {
+  const canvas = document.getElementById(`chart-${key}`);
+  const statEl = document.getElementById(`stat-${key}`);
+  if (!canvas) return;
+
+  const start = document.getElementById("start-date").value;
+  const end = document.getElementById("end-date").value;
+  const kind = KINDS[key] || "cumulative";
+  const rawSeries = DATA.series[key] || {};
+  const pairs = aggregate(rawSeries, kind, granularity, start, end);
+
+  if (charts[key]) charts[key].destroy();
+
+  if (pairs.length === 0) {
+    statEl.textContent = "No data in selected range";
+    charts[key] = null;
+    return;
+  }
+
+  const projection = projectCurrentBucket(rawSeries, kind, granularity, pairs, start, end);
+  const labels = pairs.map(p => p[0]);
+  const values = pairs.map(p => p[1]);
+  // Overlay the projection on the same x-index as the current (partial) bucket,
+  // connected to the prior point, instead of adding a separate index for it.
+  const projValues = new Array(values.length).fill(null);
+  if (projection && projection.key === labels[labels.length - 1]) {
+    if (values.length > 1) projValues[projValues.length - 2] = values[values.length - 2];
+    projValues[projValues.length - 1] = projection.value;
+  }
+
+  const first = values.find(v => v !== null && v !== undefined);
+  const last = [...values].reverse().find(v => v !== null && v !== undefined);
+  const delta = last - first;
+  const pct = first ? (delta / Math.abs(first)) * 100 : 0;
+  const sign = delta >= 0 ? "+" : "";
+  let statHtml = `Latest: <strong>${fmtNum(last)}</strong> &middot; change over range: <strong>${sign}${fmtNum(delta)}</strong> (${sign}${pct.toFixed(1)}%)`;
+  if (projection) {
+    statHtml += ` &middot; <span class="projection-note">current period projected to ${fmtNum(projection.value)} (45d EWMA)</span>`;
+  }
+  statEl.innerHTML = statHtml;
+
+  const styles = getComputedStyle(document.documentElement);
+  const accent = styles.getPropertyValue("--accent").trim() || "#6ea8fe";
+  const accent2 = styles.getPropertyValue("--accent2").trim() || "#f2b134";
+  const textDim = styles.getPropertyValue("--text-dim").trim() || "#9aa3b5";
+
+  const datasets = [{
+    label,
+    data: values,
+    borderColor: accent,
+    backgroundColor: accent + "33",
+    fill: true,
+    tension: 0.25,
+    pointRadius: values.length > 24 ? 0 : 3,
+    spanGaps: false,
+  }];
+
+  if (projection) {
+    datasets.push({
+      label: `${label} (projected)`,
+      data: projValues,
+      borderColor: accent2,
+      backgroundColor: "transparent",
+      borderDash: [6, 4],
+      fill: false,
+      tension: 0.25,
+      pointRadius: 4,
+      pointStyle: "triangle",
+      spanGaps: true,
+    });
+  }
+
+  charts[key] = new Chart(canvas.getContext("2d"), {
+    type: "line",
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: textDim, maxRotation: 45, minRotation: 0 }, grid: { display: false } },
+        y: {
+          ticks: { color: textDim, callback: v => fmtNum(v) },
+          grid: { color: textDim + "22" },
+          title: { display: true, text: label, color: textDim, font: { size: 11 } },
+        },
+      }
+    }
+  });
+}
+
+function renderStacked(group) {
+  const key = group.__stackedKey;
+  if (!key) return;
+  const canvas = document.getElementById(`chart-${key}`);
+  const statEl = document.getElementById(`stat-${key}`);
+  if (!canvas) return;
+
+  const start = document.getElementById("start-date").value;
+  const end = document.getElementById("end-date").value;
+  const components = group.stacked_volume.components;
+
+  const perComponent = components.map(c => {
+    const kind = KINDS[c.key] || "average";
+    return { label: c.label, pairs: aggregate(DATA.series[c.key] || {}, kind, granularity, start, end) };
+  });
+
+  const labelSet = new Set();
+  perComponent.forEach(c => c.pairs.forEach(([k]) => labelSet.add(k)));
+  const labels = Array.from(labelSet).sort();
+
+  if (charts[key]) charts[key].destroy();
+  if (labels.length === 0) {
+    statEl.textContent = "No data in selected range";
+    charts[key] = null;
+    return;
+  }
+  statEl.textContent = `Stacked composition across ${components.map(c => c.label).join(" + ")}`;
+
+  const palette = ["#6ea8fe", "#f2b134", "#6fce8f", "#e8636f"];
+  const styles = getComputedStyle(document.documentElement);
+  const textDim = styles.getPropertyValue("--text-dim").trim() || "#9aa3b5";
+
+  const datasets = perComponent.map((c, i) => {
+    const map = new Map(c.pairs);
+    return {
+      label: c.label,
+      data: labels.map(l => map.has(l) ? map.get(l) : null),
+      backgroundColor: palette[i % palette.length],
+      stack: "vol",
+    };
+  });
+
+  charts[key] = new Chart(canvas.getContext("2d"), {
+    type: "bar",
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: true, labels: { color: textDim } } },
+      scales: {
+        x: { stacked: true, ticks: { color: textDim, maxRotation: 45 }, grid: { display: false } },
+        y: {
+          stacked: true,
+          ticks: { color: textDim, callback: v => fmtNum(v) },
+          grid: { color: textDim + "22" },
+          title: { display: true, text: "Daily active agents", color: textDim, font: { size: 11 } },
+        },
+      }
+    }
+  });
+}
+
+function renderAll() {
+  DATA.metadata.groups.forEach(group => {
+    group.metrics.forEach(metric => renderChart(metric.key, metric.label));
+    if (group.stacked_volume) renderStacked(group);
+  });
+}
+
+function effectiveEndDate() {
+  // Extend to "today" so the current (in-progress) bucket is included and can be
+  // projected, unless the data itself somehow extends past today.
+  const today = new Date().toISOString().slice(0, 10);
+  const lastData = allDates[allDates.length - 1];
+  return today > lastData ? today : lastData;
+}
+
+function setRange(count) {
+  const endInput = document.getElementById("end-date");
+  const startInput = document.getElementById("start-date");
+  const end = effectiveEndDate();
+  if (count === "all") {
+    startInput.value = allDates[0];
+    endInput.value = end;
+  } else {
+    // count is a number of buckets at the current granularity
+    const endDate = new Date(end + "T00:00:00Z");
+    const startDate = new Date(endDate);
+    if (granularity === "day") startDate.setUTCDate(startDate.getUTCDate() - count);
+    else if (granularity === "year") startDate.setUTCFullYear(startDate.getUTCFullYear() - count);
+    else startDate.setUTCMonth(startDate.getUTCMonth() - count);
+    const clampedStart = startDate.toISOString().slice(0, 10);
+    startInput.value = clampedStart < allDates[0] ? allDates[0] : clampedStart;
+    endInput.value = end;
+  }
+  renderAll();
+}
+
+function setGranularity(g) {
+  granularity = g;
+  document.querySelectorAll("[data-gran]").forEach(b => b.classList.toggle("active", b.dataset.gran === g));
+  renderAll();
+}
+
+function init() {
+  allDates = collectAllDates();
+  if (allDates.length === 0) {
+    document.getElementById("subtitle").textContent = "No data found.";
+    return;
+  }
+
+  buildGroups();
+
+  const startInput = document.getElementById("start-date");
+  const endInput = document.getElementById("end-date");
+  const end = effectiveEndDate();
+  startInput.min = allDates[0];
+  startInput.max = end;
+  endInput.min = allDates[0];
+  endInput.max = end;
+  startInput.value = allDates[0];
+  endInput.value = end;
+
+  startInput.addEventListener("change", renderAll);
+  endInput.addEventListener("change", renderAll);
+  document.querySelectorAll("[data-range]").forEach(btn => {
+    btn.addEventListener("click", () => setRange(btn.dataset.range === "all" ? "all" : parseInt(btn.dataset.range, 10)));
+  });
+  document.querySelectorAll("[data-gran]").forEach(btn => {
+    btn.addEventListener("click", () => setGranularity(btn.dataset.gran));
+  });
+  document.getElementById("export-pdf").addEventListener("click", () => window.print());
+
+  setGranularity("month");
+
+  document.getElementById("subtitle").textContent =
+    `Rollups from ClawHub, EvoMap, Moltbook, OLAS, PyPI, and GitHub scrapers. Data generated ${new Date(DATA.metadata.generated_at).toLocaleString()}.`;
+  document.getElementById("footer").textContent =
+    `Source: data_outputs/*.csv, aggregated by dashboard/generate_data.py. Range covers ${allDates[0]} to ${allDates[allDates.length - 1]}.`;
+}
+
+init();
+</script>
+</body>
+</html>

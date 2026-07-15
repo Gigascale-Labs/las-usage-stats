@@ -40,11 +40,14 @@ def month_bucket(d: date) -> str:
     return f"{d.year:04d}-{d.month:02d}"
 
 
-def append_snapshot_csv(path: str | Path, row: dict, key_field: str = "date") -> None:
+def append_snapshot_csv(path: str | Path, row: dict, key_field: str | tuple[str, ...] = "date") -> None:
     """Append a dated snapshot row to a CSV, creating it with a header if needed.
 
-    Skips writing if a row with the same key_field value already exists,
-    so re-running a scraper the same day is idempotent.
+    Skips writing if a row matching key_field already exists, so re-running a
+    scraper the same day is idempotent. key_field can be a single column name
+    (e.g. "date") or a tuple of columns (e.g. ("package", "date")) for files
+    that hold more than one series -- otherwise same-day rows for different
+    series would collide and shadow each other.
     """
     path = Path(path)
     fieldnames = list(row.keys())
@@ -56,7 +59,9 @@ def append_snapshot_csv(path: str | Path, row: dict, key_field: str = "date") ->
             if reader.fieldnames:
                 fieldnames = reader.fieldnames
 
-    if any(r.get(key_field) == str(row.get(key_field)) for r in existing_rows):
+    key_fields = (key_field,) if isinstance(key_field, str) else key_field
+    row_key = tuple(str(row.get(f)) for f in key_fields)
+    if any(tuple(r.get(f) for f in key_fields) == row_key for r in existing_rows):
         return
 
     write_header = not path.exists()

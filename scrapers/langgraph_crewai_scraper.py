@@ -147,7 +147,7 @@ def main() -> None:
             append_snapshot_csv(
                 OUT_DIR / "github_stars_snapshot.csv",
                 {"package": package, "date": date.today().isoformat(), "total_stars": total},
-                key_field="date",
+                key_field=("package", "date"),
             )
             print(f"  {package}: {total} total stars (snapshot)")
 
