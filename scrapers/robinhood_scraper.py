@@ -7,21 +7,23 @@ Blockscout explorer stack at https://robinhoodchain.blockscout.com, whose
 public v2 REST API needs no key:
 
     GET /api/v2/stats/charts/transactions
-        -> true daily history of transaction counts (per Blockscout's
-           documented v2 chart schema: {"chart_data": [{"date", "tx_count"}, ...]})
+        -> true daily history of transaction counts:
+           {"chart_data": [{"date": "2026-07-27", "transactions_count": 8591973}, ...]}
     GET /api/v2/stats
         -> current chain-wide totals (total_addresses, total_transactions,
            total_blocks, per Blockscout's documented v2 stats schema)
 
-Caveat: this sandbox's network policy blocks Blockscout instances entirely
-(confirmed against unrelated instances too, e.g. eth.blockscout.com -- not
-Robinhood-specific), so the exact live payload shape could not be hand-
-verified against curl before writing this, unlike the other scrapers in
-this repo. Field names below follow Blockscout's documented v2 API. Both
-fetch functions are defensive about missing/renamed fields and abort with
-a clear stderr message rather than crashing run_all.py, so if the live
-schema differs slightly this fails loud on the first real (CI) run instead
-of writing bad data.
+Caveat: this project's dev sandbox blocks Blockscout instances at the
+network level entirely (confirmed against unrelated instances too, e.g.
+eth.blockscout.com -- not Robinhood-specific), so the live payload shape
+couldn't be hand-verified with curl before first writing this scraper,
+unlike the other scrapers in this repo. The chart endpoint's per-point
+field turned out to be "transactions_count", not the "tx_count" name
+initially assumed from Blockscout's generic docs -- confirmed by running
+this against the live endpoint in CI (see git history) and reading the
+diagnostic output it printed. Both fetch functions still stay defensive
+about missing/renamed fields and abort with a clear stderr message rather
+than crashing run_all.py, in case the schema shifts again.
 
 Blockscout's public API has no historical endpoint for daily active
 addresses, only current totals -- so total/active address counts are
@@ -73,7 +75,7 @@ def fetch_daily_transactions(session) -> list[dict]:
     skipped = 0
     for point in chart_data:
         d = point.get("date")
-        count = point.get("tx_count")
+        count = point.get("transactions_count")
         if d is None or count is None:
             skipped += 1
             continue
@@ -83,7 +85,7 @@ def fetch_daily_transactions(session) -> list[dict]:
     if not rows and chart_data:
         print(
             f"Robinhood Chain tx chart returned {len(chart_data)} points but none had both "
-            f"'date' and 'tx_count'; Blockscout schema may have changed. Sample point: "
+            f"'date' and 'transactions_count'; Blockscout schema may have changed. Sample point: "
             f"{chart_data[0]!r}. Skipping.",
             file=sys.stderr,
         )
