@@ -63,20 +63,33 @@ def fetch_daily_transactions(session) -> list[dict]:
     chart_data = payload.get("chart_data")
     if chart_data is None:
         print(
-            "Robinhood Chain tx chart response had no 'chart_data' field; "
-            "Blockscout schema may have changed. Skipping.",
+            f"Robinhood Chain tx chart response had no 'chart_data' field; "
+            f"Blockscout schema may have changed. Top-level keys: {sorted(payload.keys())}. Skipping.",
             file=sys.stderr,
         )
         return []
 
     rows = []
+    skipped = 0
     for point in chart_data:
         d = point.get("date")
         count = point.get("tx_count")
         if d is None or count is None:
+            skipped += 1
             continue
         rows.append({"date": d, "transactions_count": count})
     rows.sort(key=lambda r: r["date"])
+
+    if not rows and chart_data:
+        print(
+            f"Robinhood Chain tx chart returned {len(chart_data)} points but none had both "
+            f"'date' and 'tx_count'; Blockscout schema may have changed. Sample point: "
+            f"{chart_data[0]!r}. Skipping.",
+            file=sys.stderr,
+        )
+    elif skipped:
+        print(f"Robinhood Chain tx chart: skipped {skipped} malformed point(s).", file=sys.stderr)
+
     return rows
 
 
