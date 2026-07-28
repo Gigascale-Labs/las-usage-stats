@@ -9,6 +9,14 @@ unauthenticated repo-lookup endpoint as the LangGraph/CrewAI scraper,
 and are appended into the same shared github_stars_snapshot.csv (keyed
 by package+date, so it coexists safely with other packages' rows).
 
+Observed in production (2026-07-27 through 2026-07-29): npm's last-month
+downloads window can silently freeze -- three consecutive daily runs
+returned the exact same 30-day window (still ending 2026-07-24) instead
+of advancing, with no non-200 status to signal it. The scraper now
+detects when the newly-fetched window's max date doesn't advance past
+what's already on disk and skips the write with a loud stderr warning,
+instead of quietly no-op'ing forever.
+
 Output:
   data_outputs/npm_downloads_daily.csv   package, date, downloads (last ~7 day window per run)
   data_outputs/github_stars_snapshot.csv package, date, total_stars (shared with other scrapers)
@@ -59,15 +67,31 @@ def main() -> None:
 
         path = OUT_DIR / "npm_downloads_daily.csv"
         prior = []
+        prior_max_date = None
         if path.exists():
             with path.open(newline="") as f:
-                prior = [r for r in csv.DictReader(f) if r["package"] != PACKAGE]
-        combined = prior + new_rows
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["package", "date", "downloads"])
-            writer.writeheader()
-            writer.writerows(combined)
+                all_prior = list(csv.DictReader(f))
+            prior = [r for r in all_prior if r["package"] != PACKAGE]
+            prior_pkg_dates = [r["date"] for r in all_prior if r["package"] == PACKAGE]
+            if prior_pkg_dates:
+                prior_max_date = max(prior_pkg_dates)
+
+        new_max_date = max(r["date"] for r in new_rows)
+        if prior_max_date is not None and new_max_date <= prior_max_date:
+            print(
+                f"  [{PACKAGE}] npm's last-month window hasn't advanced past {prior_max_date} "
+                f"(still true as of {new_max_date}) -- npm's downloads API may be serving a "
+                f"stale/cached window. Not overwriting existing data.",
+                file=sys.stderr,
+            )
+            new_rows = []
+        else:
+            combined = prior + new_rows
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=["package", "date", "downloads"])
+                writer.writeheader()
+                writer.writerows(combined)
 
     print(f"Fetching GitHub star count for {PACKAGE} ({REPO})...")
     total = fetch_current_star_count(session)
