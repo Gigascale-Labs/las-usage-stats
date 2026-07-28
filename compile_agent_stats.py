@@ -67,6 +67,10 @@ FIELDS = [
     "n8n_npm_downloads",
     "n8n_github_stars_cumulative",
     "smithery_total_servers",
+    "robinhood_chain_transactions_count",
+    "robinhood_chain_total_addresses",
+    "robinhood_chain_total_transactions",
+    "robinhood_chain_total_blocks",
 ]
 
 
@@ -189,6 +193,15 @@ def main() -> None:
     smithery_snaps = read_csv(DATA_DIR / "smithery_registry_snapshots.csv")
     smithery_series = snapshot_series_from_first_date(smithery_snaps, "date", ["total_servers"])
 
+    # --- Robinhood Chain: true daily tx history + snapshot totals ---
+    robinhood_tx_rows = read_csv(DATA_DIR / "robinhood_chain_daily_transactions.csv")
+    robinhood_tx_by_date = {r["date"]: r for r in robinhood_tx_rows}
+
+    robinhood_snaps = read_csv(DATA_DIR / "robinhood_chain_snapshots.csv")
+    robinhood_series = snapshot_series_from_first_date(
+        robinhood_snaps, "date", ["total_addresses", "total_transactions", "total_blocks"]
+    )
+
     # --- Determine overall date range to emit ---
     all_dates = set()
     all_dates.update(cumulative_by_month.keys())  # months, handled separately below
@@ -200,6 +213,8 @@ def main() -> None:
     all_dates.update(d for (_, d) in npm_by_pkg_date.keys())
     all_dates.update(d for (_, d) in stars_by_pkg_date.keys())
     all_dates.update(smithery_series.keys())
+    all_dates.update(robinhood_tx_by_date.keys())
+    all_dates.update(robinhood_series.keys())
     all_dates.discard(None)
 
     real_dates = [d for d in all_dates if len(d) == 10]  # filter out any stray month-only keys
@@ -246,6 +261,10 @@ def main() -> None:
             "n8n_npm_downloads": npm_by_pkg_date.get(("n8n", iso)),
             "n8n_github_stars_cumulative": stars_by_pkg_date.get(("n8n", iso)),
             "smithery_total_servers": smithery_series.get(iso, {}).get("total_servers"),
+            "robinhood_chain_transactions_count": robinhood_tx_by_date.get(iso, {}).get("transactions_count"),
+            "robinhood_chain_total_addresses": robinhood_series.get(iso, {}).get("total_addresses"),
+            "robinhood_chain_total_transactions": robinhood_series.get(iso, {}).get("total_transactions"),
+            "robinhood_chain_total_blocks": robinhood_series.get(iso, {}).get("total_blocks"),
         }
         rows.append(row)
 

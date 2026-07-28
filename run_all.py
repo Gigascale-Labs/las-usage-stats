@@ -18,6 +18,7 @@ STEPS = [
     ("LangGraph / CrewAI / Agent Framework", ROOT / "scrapers" / "langgraph_crewai_scraper.py"),
     ("n8n", ROOT / "scrapers" / "n8n_scraper.py"),
     ("Smithery", ROOT / "scrapers" / "smithery_scraper.py"),
+    ("Robinhood Chain", ROOT / "scrapers" / "robinhood_scraper.py"),
 ]
 
 
