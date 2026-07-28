@@ -23,7 +23,10 @@ OUT_FILE = Path(__file__).resolve().parent / "data.js"
 
 
 def read_csv(name):
-    with (DATA_DIR / name).open(newline="") as f:
+    path = DATA_DIR / name
+    if not path.exists():
+        return []
+    with path.open(newline="") as f:
         return list(csv.DictReader(f))
 
 
@@ -54,6 +57,8 @@ def build():
     github_stars = read_csv("github_stars_snapshot.csv")
     npm_downloads = read_csv("npm_downloads_daily.csv")
     smithery = read_csv("smithery_registry_snapshots.csv")
+    robinhood_tx = read_csv("robinhood_chain_daily_transactions.csv")
+    robinhood_snaps = read_csv("robinhood_chain_snapshots.csv")
 
     def add(key, kind, data):
         series[key] = data
@@ -111,6 +116,12 @@ def build():
 
     # Smithery MCP server registry (cumulative snapshot)
     add("smithery_total_servers", "cumulative", points(smithery, "date", "total_servers"))
+
+    # Robinhood Chain: true daily tx history (flow) + address/tx/block totals (cumulative snapshots)
+    add("robinhood_chain_transactions", "flow", points(robinhood_tx, "date", "transactions_count"))
+    add("robinhood_chain_total_addresses", "cumulative", points(robinhood_snaps, "date", "total_addresses"))
+    add("robinhood_chain_total_transactions", "cumulative", points(robinhood_snaps, "date", "total_transactions"))
+    add("robinhood_chain_total_blocks", "cumulative", points(robinhood_snaps, "date", "total_blocks"))
 
     metadata = {
         "generated_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
@@ -198,6 +209,17 @@ def build():
                 "description": "A registry and hosting hub for Model Context Protocol (MCP) servers -- tracks the total number of servers listed.",
                 "metrics": [
                     {"key": "smithery_total_servers", "label": "Total MCP Servers Listed"},
+                ],
+            },
+            {
+                "name": "Robinhood Chain",
+                "url": "https://robinhoodchain.blockscout.com",
+                "description": "Robinhood's own Layer 2 (Arbitrum Orbit, settling on Ethereum) -- tracks daily transaction counts plus total addresses, transactions, and blocks.",
+                "metrics": [
+                    {"key": "robinhood_chain_transactions", "label": "Daily Transactions"},
+                    {"key": "robinhood_chain_total_addresses", "label": "Total Addresses"},
+                    {"key": "robinhood_chain_total_transactions", "label": "Total Transactions (all-time)"},
+                    {"key": "robinhood_chain_total_blocks", "label": "Total Blocks"},
                 ],
             },
         ],
