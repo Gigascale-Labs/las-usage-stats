@@ -27,17 +27,31 @@ against relying on it). This run was otherwise a total fluke in isolation
 (the only failure across the last 12+ daily runs), but the wait strategy
 was fragile by construction, not just unlucky.
 
-Fix: navigate with wait_until="domcontentloaded" (fires once the DOM is
-parsed, independent of ongoing background network chatter) and then poll
-for the actual stats to appear in the rendered text, instead of trusting
-a network-quiescence signal or a blind fixed sleep for hydration. Falls
-back to a "load"-based navigation attempt if domcontentloaded itself times
-out (e.g. a real outage), so a single strategy failing doesn't sink the
-whole scrape. Every stage's outcome (which wait strategy, how long it took
-or when it timed out, how long stat-polling took) is captured and
-surfaced in the final error message on failure, so a future timeout is
-diagnosable from the CI log alone instead of requiring a re-run to guess
-at what stage broke.
+Fix, part 1 (navigation): navigate with wait_until="domcontentloaded"
+(fires once the DOM is parsed, independent of ongoing background network
+chatter) and then poll for the actual stats to appear in the rendered
+text, instead of trusting a network-quiescence signal or a blind fixed
+sleep for hydration. Falls back to a "load"-based navigation attempt if
+domcontentloaded itself times out (e.g. a real outage), so a single
+strategy failing doesn't sink the whole scrape. Confirmed live: this
+alone fixed the timeout (0.3s to reach domcontentloaded).
+
+Fix, part 2 (stat detection -- found via that same live run's
+diagnostics, not guessed): fixing navigation exposed a second,
+previously-masked bug. MoltBook's homepage stats are count-up/odometer
+widgets that render as literal "0" the instant the DOM is parsed, then
+animate up client-side -- the original polling logic treated the mere
+presence of a regex match ("0 Human-Verified AI Agents") as "found" and
+returned garbage instantly. Since real MoltBook numbers have never been
+close to zero (~194-207k human-verified, ~2.85-2.9M registered), any
+matched value below PLAUSIBLE_STAT_FLOOR is now treated as "still
+animating, keep polling" rather than as data. The poll window was also
+widened (12s -> 20s) to give slower animations/fetches room to finish.
+Every stage's outcome -- which wait strategy succeeded/failed and when,
+how long it took for *both* stats to reach a plausible value, and which
+specific stat(s) never did -- is captured and surfaced in the final error
+message on failure, so a future failure is diagnosable from the CI log
+alone instead of requiring a re-run to guess at what stage broke.
 
 Requires: `pip install playwright && playwright install chromium` once.
 
@@ -77,8 +91,26 @@ def _first_match(patterns, text) -> int | None:
     return None
 
 
+# MoltBook's homepage stats render as count-up/odometer-style widgets that
+# start at literal "0" and animate up to the real value -- confirmed by
+# observing a live run's raw_text_sample where the fully domcontentloaded,
+# hydrated page showed "0 Human-Verified AI Agents" moments after load. A
+# naive "did the pattern match at all" check treats that "0" as found and
+# returns bogus data instantly. Real MoltBook numbers have never been
+# anywhere close to zero (~194-207k human-verified, ~2.85-2.9M registered,
+# confirmed via search when this scraper was first written, and they only
+# trend in that range over time) -- so any match at or near zero is treated
+# as "still animating", not as data, and polling continues.
+PLAUSIBLE_STAT_FLOOR = 1000
+
+
+def _plausible_match(patterns, text) -> int | None:
+    value = _first_match(patterns, text)
+    return value if value is not None and value >= PLAUSIBLE_STAT_FLOOR else None
+
+
 NAV_TIMEOUT_MS = 20000
-STAT_POLL_TIMEOUT_S = 12
+STAT_POLL_TIMEOUT_S = 20
 STAT_POLL_INTERVAL_S = 0.5
 
 # Tried in order; the first one that completes without timing out wins.
@@ -134,15 +166,20 @@ def scrape_with_playwright() -> dict:
             browser.close()
             raise RuntimeError("All navigation strategies failed:\n  " + "\n  ".join(diagnostics))
 
-        # Numbers render async after hydration. Poll for them to actually
-        # show up in the text rather than trusting a fixed sleep or a
-        # network-idle signal -- more robust to variable render time, and
-        # gives a precise "waited Ns, still not there" diagnostic on failure.
+        # Numbers render async after hydration -- and, per the note above,
+        # can render as an animating "0" before settling on the real value.
+        # Poll for both stats to reach a plausible (non-placeholder) value
+        # rather than trusting a fixed sleep, a network-idle signal, or the
+        # mere presence of a regex match. Gives a precise "waited Ns, still
+        # not there" diagnostic on failure, naming exactly which stat(s)
+        # never showed up.
         poll_start = time.monotonic()
         body_text = page.inner_text("body")
         found_at = None
         while time.monotonic() - poll_start < STAT_POLL_TIMEOUT_S:
-            if _first_match(HUMAN_VERIFIED_PATTERNS, body_text) is not None:
+            hv = _plausible_match(HUMAN_VERIFIED_PATTERNS, body_text)
+            tr = _plausible_match(TOTAL_REGISTERED_PATTERNS, body_text)
+            if hv is not None and tr is not None:
                 found_at = time.monotonic() - poll_start
                 break
             page.wait_for_timeout(int(STAT_POLL_INTERVAL_S * 1000))
@@ -150,17 +187,23 @@ def scrape_with_playwright() -> dict:
         poll_elapsed = time.monotonic() - poll_start
 
         if found_at is not None:
-            diagnostics.append(f"stats appeared in rendered text after {found_at:.1f}s of polling")
+            diagnostics.append(f"both stats reached a plausible value after {found_at:.1f}s of polling")
         else:
+            still_missing = [
+                name
+                for name, patterns in [("human_verified", HUMAN_VERIFIED_PATTERNS), ("total_registered", TOTAL_REGISTERED_PATTERNS)]
+                if _plausible_match(patterns, body_text) is None
+            ]
             diagnostics.append(
-                f"stats never appeared after {poll_elapsed:.1f}s of polling "
-                f"(limit {STAT_POLL_TIMEOUT_S}s) -- page may have hydrated with different markup"
+                f"{', '.join(still_missing)} never reached a plausible (>={PLAUSIBLE_STAT_FLOOR}) value "
+                f"after {poll_elapsed:.1f}s of polling (limit {STAT_POLL_TIMEOUT_S}s) -- "
+                f"either still animating past our timeout, or MoltBook's markup/labels changed"
             )
 
         browser.close()
 
-    human_verified = _first_match(HUMAN_VERIFIED_PATTERNS, body_text)
-    total_registered = _first_match(TOTAL_REGISTERED_PATTERNS, body_text)
+    human_verified = _plausible_match(HUMAN_VERIFIED_PATTERNS, body_text)
+    total_registered = _plausible_match(TOTAL_REGISTERED_PATTERNS, body_text)
     return {
         "human_verified": human_verified,
         "total_registered": total_registered,
