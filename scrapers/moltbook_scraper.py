@@ -47,6 +47,13 @@ close to zero (~194-207k human-verified, ~2.85-2.9M registered), any
 matched value below PLAUSIBLE_STAT_FLOOR is now treated as "still
 animating, keep polling" rather than as data. The poll window was also
 widened (12s -> 20s) to give slower animations/fetches room to finish.
+
+Clearing the plausibility floor isn't proof the animation has *finished*
+though -- a count-up mid-flight could cross 1,000 well before reaching
+its real endpoint. So a value is only accepted once it's read back
+identical on STABLE_REPEATS_REQUIRED consecutive polls; if it's still
+changing between polls when the timeout hits, that's treated the same
+as never having found it (not accepted as a false-confidence answer).
 Every stage's outcome -- which wait strategy succeeded/failed and when,
 how long it took for *both* stats to reach a plausible value, and which
 specific stat(s) never did -- is captured and surfaced in the final error
@@ -112,6 +119,7 @@ def _plausible_match(patterns, text) -> int | None:
 NAV_TIMEOUT_MS = 20000
 STAT_POLL_TIMEOUT_S = 20
 STAT_POLL_INTERVAL_S = 0.5
+STABLE_REPEATS_REQUIRED = 2  # same plausible value must be read back this many times in a row
 
 # Tried in order; the first one that completes without timing out wins.
 # "domcontentloaded" is the primary strategy (see module docstring for why
@@ -167,43 +175,67 @@ def scrape_with_playwright() -> dict:
             raise RuntimeError("All navigation strategies failed:\n  " + "\n  ".join(diagnostics))
 
         # Numbers render async after hydration -- and, per the note above,
-        # can render as an animating "0" before settling on the real value.
+        # can render as an animating "0" before settling on the real value,
+        # possibly climbing through several intermediate frames on the way.
         # Poll for both stats to reach a plausible (non-placeholder) value
-        # rather than trusting a fixed sleep, a network-idle signal, or the
-        # mere presence of a regex match. Gives a precise "waited Ns, still
-        # not there" diagnostic on failure, naming exactly which stat(s)
-        # never showed up.
+        # *and* read back unchanged on STABLE_REPEATS_REQUIRED consecutive
+        # polls, rather than trusting a fixed sleep, a network-idle signal,
+        # or the first plausible-looking number seen (which could be a
+        # mid-animation frame, not the endpoint). Gives a precise "waited
+        # Ns, still not there/still changing" diagnostic on failure.
         poll_start = time.monotonic()
         body_text = page.inner_text("body")
         found_at = None
+        last_seen: tuple[int | None, int | None] = (None, None)
+        final_values: tuple[int | None, int | None] = (None, None)
+        repeats = 0
         while time.monotonic() - poll_start < STAT_POLL_TIMEOUT_S:
-            hv = _plausible_match(HUMAN_VERIFIED_PATTERNS, body_text)
-            tr = _plausible_match(TOTAL_REGISTERED_PATTERNS, body_text)
-            if hv is not None and tr is not None:
-                found_at = time.monotonic() - poll_start
-                break
+            current = (
+                _plausible_match(HUMAN_VERIFIED_PATTERNS, body_text),
+                _plausible_match(TOTAL_REGISTERED_PATTERNS, body_text),
+            )
+            plausible = current[0] is not None and current[1] is not None
+            if plausible and current == last_seen:
+                repeats += 1
+                if repeats >= STABLE_REPEATS_REQUIRED:
+                    found_at = time.monotonic() - poll_start
+                    final_values = current
+                    break
+            else:
+                repeats = 1 if plausible else 0
+            last_seen = current
             page.wait_for_timeout(int(STAT_POLL_INTERVAL_S * 1000))
             body_text = page.inner_text("body")
         poll_elapsed = time.monotonic() - poll_start
 
         if found_at is not None:
-            diagnostics.append(f"both stats reached a plausible value after {found_at:.1f}s of polling")
+            diagnostics.append(
+                f"both stats reached a stable, plausible value after {found_at:.1f}s of polling: "
+                f"human_verified={final_values[0]}, total_registered={final_values[1]}"
+            )
         else:
             still_missing = [
                 name
-                for name, patterns in [("human_verified", HUMAN_VERIFIED_PATTERNS), ("total_registered", TOTAL_REGISTERED_PATTERNS)]
-                if _plausible_match(patterns, body_text) is None
+                for name, val in [("human_verified", last_seen[0]), ("total_registered", last_seen[1])]
+                if val is None
             ]
-            diagnostics.append(
-                f"{', '.join(still_missing)} never reached a plausible (>={PLAUSIBLE_STAT_FLOOR}) value "
-                f"after {poll_elapsed:.1f}s of polling (limit {STAT_POLL_TIMEOUT_S}s) -- "
-                f"either still animating past our timeout, or MoltBook's markup/labels changed"
-            )
+            if still_missing:
+                diagnostics.append(
+                    f"{', '.join(still_missing)} never reached a plausible (>={PLAUSIBLE_STAT_FLOOR}) value "
+                    f"after {poll_elapsed:.1f}s of polling (limit {STAT_POLL_TIMEOUT_S}s) -- "
+                    f"either still animating past our timeout, or MoltBook's markup/labels changed"
+                )
+            else:
+                diagnostics.append(
+                    f"both stats reached plausible values but never stabilized across "
+                    f"{STABLE_REPEATS_REQUIRED} consecutive polls within {poll_elapsed:.1f}s "
+                    f"(limit {STAT_POLL_TIMEOUT_S}s) -- last seen: "
+                    f"human_verified={last_seen[0]}, total_registered={last_seen[1]}"
+                )
 
         browser.close()
 
-    human_verified = _plausible_match(HUMAN_VERIFIED_PATTERNS, body_text)
-    total_registered = _plausible_match(TOTAL_REGISTERED_PATTERNS, body_text)
+    human_verified, total_registered = final_values
     return {
         "human_verified": human_verified,
         "total_registered": total_registered,
