@@ -15,6 +15,30 @@ number is deliberately much smaller than total registered and has been
 *dropping* over time as verification sweeps remove bot-farm accounts.
 That's expected behavior, not a scraper bug.
 
+Observed in production (2026-07-28): a daily CI run failed with
+"Page.goto: Timeout 30000ms exceeded" waiting for wait_until="networkidle".
+Root cause, not just a flaky network blip: "networkidle" requires zero
+in-flight network requests for 500ms, and Next.js SPAs commonly run
+background polling/analytics/websocket traffic that never fully quiesces
+-- so networkidle can time out even once the stats have long since
+rendered. That's the same class of issue as generic Playwright docs warn
+about for networkidle on modern SPAs (see playwright.dev's own caution
+against relying on it). This run was otherwise a total fluke in isolation
+(the only failure across the last 12+ daily runs), but the wait strategy
+was fragile by construction, not just unlucky.
+
+Fix: navigate with wait_until="domcontentloaded" (fires once the DOM is
+parsed, independent of ongoing background network chatter) and then poll
+for the actual stats to appear in the rendered text, instead of trusting
+a network-quiescence signal or a blind fixed sleep for hydration. Falls
+back to a "load"-based navigation attempt if domcontentloaded itself times
+out (e.g. a real outage), so a single strategy failing doesn't sink the
+whole scrape. Every stage's outcome (which wait strategy, how long it took
+or when it timed out, how long stat-polling took) is captured and
+surfaced in the final error message on failure, so a future timeout is
+diagnosable from the CI log alone instead of requiring a re-run to guess
+at what stage broke.
+
 Requires: `pip install playwright && playwright install chromium` once.
 
 Output:
@@ -26,6 +50,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import time
 from datetime import date
 from pathlib import Path
 
@@ -52,8 +77,22 @@ def _first_match(patterns, text) -> int | None:
     return None
 
 
+NAV_TIMEOUT_MS = 20000
+STAT_POLL_TIMEOUT_S = 12
+STAT_POLL_INTERVAL_S = 0.5
+
+# Tried in order; the first one that completes without timing out wins.
+# "domcontentloaded" is the primary strategy (see module docstring for why
+# networkidle is unreliable here); "load" is a fallback for the rarer case
+# where domcontentloaded itself doesn't fire in time.
+NAV_STRATEGIES = ["domcontentloaded", "load"]
+
+
 def scrape_with_playwright() -> dict:
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
     from playwright.sync_api import sync_playwright
+
+    diagnostics: list[str] = []
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -64,15 +103,70 @@ def scrape_with_playwright() -> dict:
                 "las-usage-stats-research-bot"
             )
         )
-        page.goto(URL, wait_until="networkidle", timeout=30000)
-        # Numbers render async after hydration; give it a beat.
-        page.wait_for_timeout(3000)
+
+        navigated = False
+        for wait_until in NAV_STRATEGIES:
+            start = time.monotonic()
+            try:
+                page.goto(URL, wait_until=wait_until, timeout=NAV_TIMEOUT_MS)
+            except PlaywrightTimeoutError as exc:
+                elapsed = time.monotonic() - start
+                diagnostics.append(
+                    f"goto(wait_until={wait_until!r}) timed out after {elapsed:.1f}s "
+                    f"(limit {NAV_TIMEOUT_MS / 1000:.0f}s): {exc}"
+                )
+                continue
+            elapsed = time.monotonic() - start
+            diagnostics.append(f"goto(wait_until={wait_until!r}) succeeded in {elapsed:.1f}s")
+            navigated = True
+            break
+
+        if not navigated:
+            # Even a failed goto() often leaves a partially-loaded page behind
+            # (the timeout is on reaching the wait_until state, not on getting
+            # a response at all) -- grab whatever's there for the failure
+            # message rather than raising blind.
+            try:
+                partial_len = len(page.content())
+                diagnostics.append(f"page.content() after failed navigation: {partial_len} chars present")
+            except Exception as exc:  # noqa: BLE001
+                diagnostics.append(f"page.content() after failed navigation also failed: {exc}")
+            browser.close()
+            raise RuntimeError("All navigation strategies failed:\n  " + "\n  ".join(diagnostics))
+
+        # Numbers render async after hydration. Poll for them to actually
+        # show up in the text rather than trusting a fixed sleep or a
+        # network-idle signal -- more robust to variable render time, and
+        # gives a precise "waited Ns, still not there" diagnostic on failure.
+        poll_start = time.monotonic()
         body_text = page.inner_text("body")
+        found_at = None
+        while time.monotonic() - poll_start < STAT_POLL_TIMEOUT_S:
+            if _first_match(HUMAN_VERIFIED_PATTERNS, body_text) is not None:
+                found_at = time.monotonic() - poll_start
+                break
+            page.wait_for_timeout(int(STAT_POLL_INTERVAL_S * 1000))
+            body_text = page.inner_text("body")
+        poll_elapsed = time.monotonic() - poll_start
+
+        if found_at is not None:
+            diagnostics.append(f"stats appeared in rendered text after {found_at:.1f}s of polling")
+        else:
+            diagnostics.append(
+                f"stats never appeared after {poll_elapsed:.1f}s of polling "
+                f"(limit {STAT_POLL_TIMEOUT_S}s) -- page may have hydrated with different markup"
+            )
+
         browser.close()
 
     human_verified = _first_match(HUMAN_VERIFIED_PATTERNS, body_text)
     total_registered = _first_match(TOTAL_REGISTERED_PATTERNS, body_text)
-    return {"human_verified": human_verified, "total_registered": total_registered, "raw_text_sample": body_text[:2000]}
+    return {
+        "human_verified": human_verified,
+        "total_registered": total_registered,
+        "raw_text_sample": body_text[:2000],
+        "diagnostics": diagnostics,
+    }
 
 
 def main() -> None:
@@ -96,6 +190,7 @@ def main() -> None:
             "MoltBook's markup/labels may have changed -- inspect raw_text_sample below.",
             file=sys.stderr,
         )
+        print("Diagnostics:\n  " + "\n  ".join(result["diagnostics"]), file=sys.stderr)
         print(result["raw_text_sample"], file=sys.stderr)
         sys.exit(1)
 
