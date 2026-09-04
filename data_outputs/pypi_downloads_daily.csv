@@ -1,5 +1,4 @@
 package,date,downloads
-langgraph,2026-03-06,1502117
 langgraph,2026-03-07,868528
 langgraph,2026-03-08,809944
 langgraph,2026-03-09,1530661
@@ -180,7 +179,7 @@ langgraph,2026-08-30,806608
 langgraph,2026-08-31,1542238
 langgraph,2026-09-01,1720777
 langgraph,2026-09-02,1807914
-crewai,2026-03-06,245664
+langgraph,2026-09-03,1726940
 crewai,2026-03-07,206669
 crewai,2026-03-08,179504
 crewai,2026-03-09,227710
@@ -361,7 +360,7 @@ crewai,2026-08-30,72520
 crewai,2026-08-31,83822
 crewai,2026-09-01,89652
 crewai,2026-09-02,89912
-agent-framework,2026-03-06,15371
+crewai,2026-09-03,80992
 agent-framework,2026-03-07,5381
 agent-framework,2026-03-08,6725
 agent-framework,2026-03-09,13749
@@ -542,3 +541,4 @@ agent-framework,2026-08-30,2429
 agent-framework,2026-08-31,5102
 agent-framework,2026-09-01,6251
 agent-framework,2026-09-02,6090
+agent-framework,2026-09-03,6016
