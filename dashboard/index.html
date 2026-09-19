@@ -99,7 +99,7 @@
   }
   .chart-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
     gap: 20px;
   }
   .chart-card {
@@ -126,6 +126,24 @@
     font-size: 0.75rem;
     margin-top: 40px;
     text-align: center;
+  }
+
+  @media (max-width: 640px) {
+    body { padding: 16px 16px 48px; }
+    .controls {
+      flex-direction: column;
+      align-items: stretch;
+      padding: 14px 16px;
+      gap: 14px;
+    }
+    .controls select,
+    .controls input[type="date"],
+    .controls input[type="month"] {
+      width: 100%;
+    }
+    .granularity, .presets { width: 100%; }
+    .granularity button, .presets button { flex: 1 1 0; }
+    button.primary { width: 100%; }
   }
 
   @media print {
