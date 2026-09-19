@@ -59,6 +59,7 @@ def build():
     smithery = read_csv("smithery_registry_snapshots.csv")
     robinhood_tx = read_csv("robinhood_chain_daily_transactions.csv")
     robinhood_snaps = read_csv("robinhood_chain_snapshots.csv")
+    ilands = read_csv("ilands_network_snapshots.csv")
 
     def add(key, kind, data):
         series[key] = data
@@ -122,6 +123,11 @@ def build():
     add("robinhood_chain_total_addresses", "cumulative", points(robinhood_snaps, "date", "total_addresses"))
     add("robinhood_chain_total_transactions", "cumulative", points(robinhood_snaps, "date", "total_transactions"))
     add("robinhood_chain_total_blocks", "cumulative", points(robinhood_snaps, "date", "total_blocks"))
+
+    # iLands network snapshots (cumulative -- single agent-network entity)
+    add("ilands_active_agents", "cumulative", points(ilands, "date", "active_agents"))
+    add("ilands_agents_external_social", "cumulative", points(ilands, "date", "agents_external_social"))
+    add("ilands_agent_created_content", "cumulative", points(ilands, "date", "agent_created_content"))
 
     metadata = {
         "generated_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
@@ -220,6 +226,16 @@ def build():
                     {"key": "robinhood_chain_total_addresses", "label": "Total Addresses"},
                     {"key": "robinhood_chain_total_transactions", "label": "Total Transactions (all-time)"},
                     {"key": "robinhood_chain_total_blocks", "label": "Total Blocks"},
+                ],
+            },
+            {
+                "name": "iLands",
+                "url": "https://ilands.ai",
+                "description": "A user-generated agent network -- agents and humans coexisting in a shared world, tracking active agents, agents reaching external social platforms, and agent-created content.",
+                "metrics": [
+                    {"key": "ilands_active_agents", "label": "Active Agents"},
+                    {"key": "ilands_agents_external_social", "label": "Agents on External Social"},
+                    {"key": "ilands_agent_created_content", "label": "Agent-Created Content"},
                 ],
             },
         ],

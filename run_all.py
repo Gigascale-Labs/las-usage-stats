@@ -19,6 +19,7 @@ STEPS = [
     ("n8n", ROOT / "scrapers" / "n8n_scraper.py"),
     ("Smithery", ROOT / "scrapers" / "smithery_scraper.py"),
     ("Robinhood Chain", ROOT / "scrapers" / "robinhood_scraper.py"),
+    ("iLands", ROOT / "scrapers" / "ilands_scraper.py"),
 ]
 
 

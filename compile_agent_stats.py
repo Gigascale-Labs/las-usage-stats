@@ -71,6 +71,9 @@ FIELDS = [
     "robinhood_chain_total_addresses",
     "robinhood_chain_total_transactions",
     "robinhood_chain_total_blocks",
+    "ilands_active_agents",
+    "ilands_agents_external_social",
+    "ilands_agent_created_content",
 ]
 
 
@@ -202,6 +205,12 @@ def main() -> None:
         robinhood_snaps, "date", ["total_addresses", "total_transactions", "total_blocks"]
     )
 
+    # --- iLands: single-entity snapshot, forward-filled ---
+    ilands_snaps = read_csv(DATA_DIR / "ilands_network_snapshots.csv")
+    ilands_series = snapshot_series_from_first_date(
+        ilands_snaps, "date", ["active_agents", "agents_external_social", "agent_created_content"]
+    )
+
     # --- Determine overall date range to emit ---
     all_dates = set()
     all_dates.update(cumulative_by_month.keys())  # months, handled separately below
@@ -215,6 +224,7 @@ def main() -> None:
     all_dates.update(smithery_series.keys())
     all_dates.update(robinhood_tx_by_date.keys())
     all_dates.update(robinhood_series.keys())
+    all_dates.update(ilands_series.keys())
     all_dates.discard(None)
 
     real_dates = [d for d in all_dates if len(d) == 10]  # filter out any stray month-only keys
@@ -265,6 +275,9 @@ def main() -> None:
             "robinhood_chain_total_addresses": robinhood_series.get(iso, {}).get("total_addresses"),
             "robinhood_chain_total_transactions": robinhood_series.get(iso, {}).get("total_transactions"),
             "robinhood_chain_total_blocks": robinhood_series.get(iso, {}).get("total_blocks"),
+            "ilands_active_agents": ilands_series.get(iso, {}).get("active_agents"),
+            "ilands_agents_external_social": ilands_series.get(iso, {}).get("agents_external_social"),
+            "ilands_agent_created_content": ilands_series.get(iso, {}).get("agent_created_content"),
         }
         rows.append(row)
 
