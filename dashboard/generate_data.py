@@ -106,7 +106,9 @@ def build():
         add(f"github_stars_{pkg}", "cumulative", points(rows, "date", "total_stars"))
     # Ensure every tracked package has a series even if a snapshot row hasn't landed yet,
     # so the UI can render an explicit "no data" note instead of silently omitting the chart.
-    for pkg in ("langgraph", "crewai", "agent-framework", "n8n"):
+    # (LangGraph and Microsoft Agent Framework are still scraped into github_stars_snapshot.csv,
+    # just not charted on the dashboard -- per your call to drop those two panels.)
+    for pkg in ("crewai", "n8n"):
         series.setdefault(f"github_stars_{pkg}", {})
         kinds.setdefault(f"github_stars_{pkg}", "cumulative")
 
@@ -203,9 +205,7 @@ def build():
                 "url": "https://github.com",
                 "description": "Cumulative GitHub stars for tracked agent frameworks and tools, as a proxy for adoption.",
                 "metrics": [
-                    {"key": "github_stars_langgraph", "label": "LangGraph Stars", "url": "https://github.com/langchain-ai/langgraph"},
                     {"key": "github_stars_crewai", "label": "CrewAI Stars", "url": "https://github.com/crewAIInc/crewAI"},
-                    {"key": "github_stars_agent-framework", "label": "Microsoft Agent Framework Stars", "url": "https://github.com/microsoft/agent-framework"},
                     {"key": "github_stars_n8n", "label": "n8n Stars", "url": "https://github.com/n8n-io/n8n"},
                 ],
             },
