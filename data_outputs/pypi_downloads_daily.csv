@@ -181,6 +181,7 @@ langgraph,2026-09-23,1846836
 langgraph,2026-09-24,1852949
 langgraph,2026-09-25,1624806
 langgraph,2026-09-26,864954
+langgraph,2026-09-27,942906
 crewai,2026-03-29,148445
 crewai,2026-03-30,221231
 crewai,2026-03-31,203651
@@ -363,6 +364,7 @@ crewai,2026-09-23,84841
 crewai,2026-09-24,87141
 crewai,2026-09-25,83113
 crewai,2026-09-26,69925
+crewai,2026-09-27,71271
 agent-framework,2026-03-29,4207
 agent-framework,2026-03-30,19063
 agent-framework,2026-03-31,15678
@@ -545,3 +547,4 @@ agent-framework,2026-09-23,8701
 agent-framework,2026-09-24,9125
 agent-framework,2026-09-25,8294
 agent-framework,2026-09-26,5103
+agent-framework,2026-09-27,4826
